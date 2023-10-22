@@ -20,6 +20,8 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 */
 
+//https://switchbrew.org/wiki/NCA
+
 #include "install/nsp.hpp"
 
 #include <threads.h>
@@ -28,116 +30,165 @@ SOFTWARE.
 #include "util/error.hpp"
 #include "util/debug.h"
 
+//
+#include "util/lang.hpp"
+#include "ui/MainApplication.hpp"
+namespace inst::ui {
+	extern MainApplication* mainApp;
+}
+//
+
 namespace tin::install::nsp
 {
-    NSP::NSP() {}
+	NSP::NSP() {}
 
-    // TODO: Do verification: PFS0 magic, sizes not zero
-    void NSP::RetrieveHeader()
-    {
-        LOG_DEBUG("Retrieving remote NSP header...\n");
+	// TODO: Do verification: PFS0 magic, sizes not zero
+	void NSP::RetrieveHeader()
+	{
+		LOG_DEBUG("Retrieving remote NSP header...\n");
 
-        // Retrieve the base header
-        m_headerBytes.resize(sizeof(PFS0BaseHeader), 0);
-        this->BufferData(m_headerBytes.data(), 0x0, sizeof(PFS0BaseHeader));
+		// Retrieve the base header
+		m_headerBytes.resize(sizeof(PFS0BaseHeader), 0);
+		this->BufferData(m_headerBytes.data(), 0x0, sizeof(PFS0BaseHeader));
 
-        LOG_DEBUG("Base header: \n");
-        printBytes(m_headerBytes.data(), sizeof(PFS0BaseHeader), true);
+		LOG_DEBUG("Base header: \n");
+		printBytes(m_headerBytes.data(), sizeof(PFS0BaseHeader), true);
 
-        // Retrieve the full header
-        size_t remainingHeaderSize = this->GetBaseHeader()->numFiles * sizeof(PFS0FileEntry) + this->GetBaseHeader()->stringTableSize;
-        m_headerBytes.resize(sizeof(PFS0BaseHeader) + remainingHeaderSize, 0);
-        this->BufferData(m_headerBytes.data() + sizeof(PFS0BaseHeader), sizeof(PFS0BaseHeader), remainingHeaderSize);
+		// Retrieve the full header
+		size_t remainingHeaderSize = this->GetBaseHeader()->numFiles * sizeof(PFS0FileEntry) + this->GetBaseHeader()->stringTableSize;
+		m_headerBytes.resize(sizeof(PFS0BaseHeader) + remainingHeaderSize, 0);
+		this->BufferData(m_headerBytes.data() + sizeof(PFS0BaseHeader), sizeof(PFS0BaseHeader), remainingHeaderSize);
 
-        LOG_DEBUG("Full header: \n");
-        printBytes(m_headerBytes.data(), m_headerBytes.size(), true);
-    }
+		LOG_DEBUG("Full header: \n");
+		printBytes(m_headerBytes.data(), m_headerBytes.size(), true);
 
-    const PFS0FileEntry* NSP::GetFileEntry(unsigned int index)
-    {
-        if (index >= this->GetBaseHeader()->numFiles)
-            THROW_FORMAT("File entry index is out of bounds\n");
+		/* debug print header
+		FILE * pFile;
+		pFile = fopen ("header.hxd", "wb");
+		fwrite (m_headerBytes.data(), sizeof(char), m_headerBytes.size(), pFile);
+		fclose (pFile);
+		*/
+	}
 
-        size_t fileEntryOffset = sizeof(PFS0BaseHeader) + index * sizeof(PFS0FileEntry);
+	const PFS0FileEntry* NSP::GetFileEntry(unsigned int index)
+	{
+		if (index >= this->GetBaseHeader()->numFiles)
+			THROW_FORMAT("File entry index is out of bounds\n");
 
-        if (m_headerBytes.size() < fileEntryOffset + sizeof(PFS0FileEntry))
-            THROW_FORMAT("Header bytes is too small to get file entry!");
+		size_t fileEntryOffset = sizeof(PFS0BaseHeader) + index * sizeof(PFS0FileEntry);
 
-        return reinterpret_cast<PFS0FileEntry*>(m_headerBytes.data() + fileEntryOffset);
-    }
+		if (m_headerBytes.size() < fileEntryOffset + sizeof(PFS0FileEntry))
+			THROW_FORMAT("Header bytes is too small to get file entry!");
 
-    std::vector<const PFS0FileEntry*> NSP::GetFileEntriesByExtension(std::string extension)
-    {
-        std::vector<const PFS0FileEntry*> entryList;
+		return reinterpret_cast<PFS0FileEntry*>(m_headerBytes.data() + fileEntryOffset);
+	}
 
-        for (unsigned int i = 0; i < this->GetBaseHeader()->numFiles; i++)
-        {
-            const PFS0FileEntry* fileEntry = this->GetFileEntry(i);
-            std::string name(this->GetFileEntryName(fileEntry));
-            auto foundExtension = name.substr(name.find(".") + 1); 
+	std::vector<const PFS0FileEntry*> NSP::GetFileEntriesByExtension(std::string extension)
+	{
+		std::vector<const PFS0FileEntry*> entryList;
 
-            if (foundExtension == extension)
-                entryList.push_back(fileEntry);
-        }
+		for (unsigned int i = 0; i < this->GetBaseHeader()->numFiles; i++)
+		{
+			const PFS0FileEntry* fileEntry = this->GetFileEntry(i);
+			std::string name(this->GetFileEntryName(fileEntry));
+			auto foundExtension = name.substr(name.find(".") + 1);
 
-        return entryList;
-    }
+			// fix cert filename extension becoming corrupted when xcz/nsz is installing certs.
+			std::string cert("cert");
+			std::size_t found = name.find(cert);
+			if (found != std::string::npos) {
+				int pos = 0;
+				std::string mystr = name;
+				pos = mystr.find_last_of('.');
+				mystr = mystr.substr(5, pos);
+				foundExtension = mystr.substr(mystr.find(".") + 1);
+			}
 
-    const PFS0FileEntry* NSP::GetFileEntryByName(std::string name)
-    {
-        for (unsigned int i = 0; i < this->GetBaseHeader()->numFiles; i++)
-        {
-            const PFS0FileEntry* fileEntry = this->GetFileEntry(i);
-            std::string foundName(this->GetFileEntryName(fileEntry));
+			if (foundExtension == extension)
+				entryList.push_back(fileEntry);
+		}
 
-            if (foundName == name)
-                return fileEntry;
-        }
+		return entryList;
+	}
 
-        return nullptr;
-    }
+	const PFS0FileEntry* NSP::GetFileEntryByName(std::string name)
+	{
+		//returns only the .nca and .cnmt.nca filenames
+		for (unsigned int i = 0; i < this->GetBaseHeader()->numFiles; i++)
+		{
+			const PFS0FileEntry* fileEntry = this->GetFileEntry(i);
+			std::string foundName(this->GetFileEntryName(fileEntry));
 
-    const PFS0FileEntry* NSP::GetFileEntryByNcaId(const NcmContentId& ncaId)
-    {
-        const PFS0FileEntry* fileEntry = nullptr;
-        std::string ncaIdStr = tin::util::GetNcaIdString(ncaId);
 
-        if ((fileEntry = this->GetFileEntryByName(ncaIdStr + ".nca")) == nullptr)
-        {
-            if ((fileEntry = this->GetFileEntryByName(ncaIdStr + ".cnmt.nca")) == nullptr)
-            {
-                    if ((fileEntry = this->GetFileEntryByName(ncaIdStr + ".ncz")) == nullptr)
-                    {
-                         if ((fileEntry = this->GetFileEntryByName(ncaIdStr + ".cnmt.ncz")) == nullptr)
-                         {
-                              return nullptr;
-                         }
-                    }
-            }
-        }
+			if (foundName == name) {
+				/*
+				//Debug code
+				FILE * fp;
+				fp = fopen ("name.txt", "a+");
+				std::string x = foundName;
+				const char *info = x.c_str();
+				fprintf(fp, "%s\n", info);
+				fclose(fp);
+				*/
 
-        return fileEntry;
-    }
+				return fileEntry;
+			}
+		}
 
-    const char* NSP::GetFileEntryName(const PFS0FileEntry* fileEntry)
-    {
-        u64 stringTableStart = sizeof(PFS0BaseHeader) + this->GetBaseHeader()->numFiles * sizeof(PFS0FileEntry);
-        return reinterpret_cast<const char*>(m_headerBytes.data() + stringTableStart + fileEntry->stringTableOffset);
-    }
+		return nullptr;
+	}
 
-    const PFS0BaseHeader* NSP::GetBaseHeader()
-    {
-        if (m_headerBytes.empty())
-            THROW_FORMAT("Cannot retrieve header as header bytes are empty. Have you retrieved it yet?\n");
+	const PFS0FileEntry* NSP::GetFileEntryByNcaId(const NcmContentId& ncaId)
+	{
+		const PFS0FileEntry* fileEntry = nullptr;
+		std::string ncaIdStr = tin::util::GetNcaIdString(ncaId);
 
-        return reinterpret_cast<PFS0BaseHeader*>(m_headerBytes.data());
-    }
+		if ((fileEntry = this->GetFileEntryByName(ncaIdStr + ".nca")) == nullptr)
+		{
+			if ((fileEntry = this->GetFileEntryByName(ncaIdStr + ".cnmt.nca")) == nullptr)
+			{
+				if ((fileEntry = this->GetFileEntryByName(ncaIdStr + ".ncz")) == nullptr)
+				{
+					if ((fileEntry = this->GetFileEntryByName(ncaIdStr + ".cnmt.ncz")) == nullptr)
+					{
+						return nullptr;
+					}
+				}
+			}
+		}
 
-    u64 NSP::GetDataOffset()
-    {
-        if (m_headerBytes.empty())
-            THROW_FORMAT("Cannot get data offset as header is empty. Have you retrieved it yet?\n");
+		return fileEntry;
+	}
 
-        return m_headerBytes.size();
-    }
+	const char* NSP::GetFileEntryName(const PFS0FileEntry* fileEntry)
+	{
+		u64 stringTableStart = sizeof(PFS0BaseHeader) + this->GetBaseHeader()->numFiles * sizeof(PFS0FileEntry);
+
+		//check for messed up filenames in our table.... usually when instaling xcz/xci
+		/*
+		FILE * fp;
+		fp = fopen ("st.txt", "a+");
+		std::string x = reinterpret_cast<const char*>(m_headerBytes.data() + stringTableStart + fileEntry->stringTableOffset);
+		const char *info = x.c_str();
+		fprintf(fp, "%s\n", info);
+		fclose(fp);
+		*/
+
+		return reinterpret_cast<const char*>(m_headerBytes.data() + stringTableStart + fileEntry->stringTableOffset);
+	}
+
+	const PFS0BaseHeader* NSP::GetBaseHeader()
+	{
+		if (m_headerBytes.empty())
+			THROW_FORMAT("Cannot retrieve header as header bytes are empty. Have you retrieved it yet?\n");
+
+		return reinterpret_cast<PFS0BaseHeader*>(m_headerBytes.data());
+	}
+
+	u64 NSP::GetDataOffset()
+	{
+		if (m_headerBytes.empty())
+			THROW_FORMAT("Cannot get data offset as header is empty. Have you retrieved it yet?\n");
+		return m_headerBytes.size();
+	}
 }

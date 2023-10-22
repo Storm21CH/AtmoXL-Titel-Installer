@@ -54,13 +54,14 @@ namespace tin::install
 
             virtual void InstallContentMetaRecords(tin::data::ByteBuffer& installContentMetaBuf, int i);
             virtual void InstallApplicationRecord(int i);
-            virtual void InstallTicketCert() = 0;
+            //virtual void InstallTicketCert() = 0;
             virtual void InstallNCA(const NcmContentId &ncaId) = 0;
 
         public:
             virtual ~Install();
 
             virtual void Prepare();
+            virtual void InstallTicketCert();//tinwoo
             virtual void Begin();
 
             virtual u64 GetTitleId(int i = 0);

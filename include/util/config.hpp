@@ -6,7 +6,7 @@ namespace inst::config {
     static const std::string appDir = "sdmc:/switch/AtmoXL-Titel-Installer";
     static const std::string configPath = appDir + "/config.json";
     static const std::string themecolorPath = appDir + "/themecolor.json";
-    static const std::string appVersion = "1.7.3";
+    static const std::string appVersion = "1.7.4";
 
     extern std::string gAuthKey;
     extern std::string lastNetUrl;
@@ -28,6 +28,8 @@ namespace inst::config {
     extern bool enableLightning;
     extern bool autoUpdate;
     extern bool usbAck;
+    extern bool fixticket;//Tinwoo
+
 
     void setConfig();
     void parseConfig();

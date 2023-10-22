@@ -24,6 +24,7 @@ namespace inst::config {
     bool overClock;
     bool usbAck;
     bool validateNCAs;
+    bool fixticket;//Tinwoo
 
     void setConfig() {
         nlohmann::json j = {
@@ -38,6 +39,7 @@ namespace inst::config {
             {"usbAck", usbAck},
             {"validateNCAs", validateNCAs},
             {"lastNetUrl", lastNetUrl},
+            {"fixticket", fixticket},//Tinwoo
             {"httpIndexUrl", httpIndexUrl}
         };
         std::ofstream file(inst::config::configPath);
@@ -50,6 +52,7 @@ namespace inst::config {
             nlohmann::json j;
             file >> j;
             autoUpdate = j["autoUpdate"].get<bool>();
+            fixticket = j["fixticket"].get<bool>();//Tinwoo
             deletePrompt = j["deletePrompt"].get<bool>();
             enableSound = j["enableSound"].get<bool>();
             enableLightning = j["enableLightning"].get<bool>();
@@ -76,6 +79,7 @@ namespace inst::config {
             validateNCAs = true;
             lastNetUrl = "https://";
             httpIndexUrl = "http://";
+            fixticket = true;//Tinwoo
             setConfig();
         }
     }

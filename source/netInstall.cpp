@@ -170,6 +170,7 @@ namespace netInstStuff{
                 inst::ui::instPage::setInstInfoText("inst.info_page.preparing"_lang);
                 inst::ui::instPage::setInstBarPerc(0);
                 installTask->Prepare();
+                installTask->InstallTicketCert();//Tinwoo
                 installTask->Begin();
             }
         }
